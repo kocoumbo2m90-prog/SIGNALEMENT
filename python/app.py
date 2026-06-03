@@ -237,27 +237,26 @@ def create_app(config_name='development'):
                 'health': '/health'
             }
         }), 200
+
+    # ==================== Initialisation au Démarrage (Pour Render/Gunicorn) ====================
+    with app.app_context():
+        try:
+            db.create_all()
+            logger.info("Database tables created successfully in App Context")
+        except Exception as e:
+            logger.error(f"Failed to create database tables: {str(e)}")
+
+        try:
+            ExcelHelper.init_excel()
+            logger.info("Excel ledger initialized successfully in App Context")
+        except Exception as e:
+            logger.error(f"Failed to initialize Excel file: {str(e)}")
     
     return app
 
 
-# ==================== Point d'entrée de l'application ====================
+# ==================== Point d'entrée Local ====================
 if __name__ == '__main__':
     env = os.environ.get('FLASK_ENV', 'development')
     app = create_app(env)
-    
-    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
-        with app.app_context():
-            # Initialisation de la base de données
-            db.create_all()
-            logger.info("Database tables created successfully (Worker process)")
-            
-            # Initialisation du fichier Excel de signalements
-            try:
-                ExcelHelper.init_excel()
-                logger.info("Excel ledger initialized successfully")
-            except Exception as e:
-                logger.error(f"Failed to initialize Excel file: {str(e)}")
-
-    # Démarrage de l'application
     app.run(debug=True, host='0.0.0.0', port=5000)
