@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Signalement - Système de Signalements</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+        
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        }
+        
+        .card h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 600;
+        }
+        
+        input, textarea, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 5px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        textarea {
+            resize: vertical;
+            min-height: 120px;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 5px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .reports-list {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .report-item {
+            background: #f8f9fa;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-left: 5px solid #667eea;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        
+        .report-item:hover {
+            background: #e8e9ff;
+        }
+        
+        .report-title {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        
+        .report-meta {
+            font-size: 0.9em;
+            color: #777;
+        }
+        
+        .report-status {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+            margin-top: 8px;
+        }
+        
+        .status-nouveau { background: #ffeaa7; color: #d63031; }
+        .status-cours { background: #74b9ff; color: #0984e3; }
+        .status-traite { background: #55efc4; color: #00b894; }
+        .status-rejete { background: #fab1a0; color: #d63031; }
+        
+        .stats {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            margin-top: 30px;
+        }
+        
+        .stats h3 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+        
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+        }
+        
+        .stat-box {
+            text-align: center;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+        }
+        
+        .stat-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .stat-label {
+            font-size: 0.95em;
+            opacity: 0.9;
+        }
+        
+        .message {
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            animation: slideIn 0.3s ease;
+        }
+        
+        .success { background: #55efc4; color: #00b894; }
+        .error { background: #fab1a0; color: #d63031; }
+        
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+            
+            .stat-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            header h1 {
+                font-size: 1.8em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📋 Signalement</h1>
+            <p>Système de gestion des signalements citoyens</p>
+        </header>
+        
+        <div class="main-content">
+            <!-- Create Report Form -->
+            <div class="card">
+                <h2>Créer un signalement</h2>
+                <div id="message"></div>
+                
+                <form id="reportForm">
+                    <div class="form-group">
+                        <label for="title">Titre *</label>
+                        <input type="text" id="title" name="title" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="description">Description *</label>
+                        <textarea id="description" name="description" required></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="category">Catégorie *</label>
+                        <select id="category" name="category" required>
+                            <option value="">-- Sélectionner --</option>
+                            <option value="Sécurité">Sécurité</option>
+                            <option value="Environnement">Environnement</option>
+                            <option value="Corruption">Corruption</option>
+                            <option value="Santé publique">Santé publique</option>
+                            <option value="Autre">Autre</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="severity">Sévérité *</label>
+                        <select id="severity" name="severity" required>
+                            <option value="">-- Sélectionner --</option>
+                            <option value="Faible">Faible</option>
+                            <option value="Moyen">Moyen</option>
+                            <option value="Élevé">Élevé</option>
+                            <option value="Critique">Critique</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="isAnonymous" name="isAnonymous" checked>
+                            Signalement anonyme
+                        </label>
+                    </div>
+                    
+                    <div id="reporterInfo" style="display: none;">
+                        <div class="form-group">
+                            <label for="reporterName">Nom</label>
+                            <input type="text" id="reporterName" name="reporterName">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="reporterEmail">Email</label>
+                            <input type="email" id="reporterEmail" name="reporterEmail">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="reporterPhone">Téléphone</label>
+                            <input type="tel" id="reporterPhone" name="reporterPhone">
+                        </div>
+                    </div>
+                    
+                    <button type="submit">Soumettre le signalement</button>
+                </form>
+            </div>
+            
+            <!-- Reports List -->
+            <div class="card">
+                <h2>Signalements récents</h2>
+                <div id="reportsList" class="reports-list"></div>
+            </div>
+        </div>
+        
+        <!-- Statistics -->
+        <div class="stats">
+            <h3>Statistiques</h3>
+            <div class="stat-grid" id="statsGrid">
+                <div class="stat-box">
+                    <div class="stat-value" id="totalReports">0</div>
+                    <div class="stat-label">Total signalements</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="newReports">0</div>
+                    <div class="stat-label">Nouveau</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="inProgressReports">0</div>
+                    <div class="stat-label">En cours</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="resolvedReports">0</div>
+                    <div class="stat-label">Traités</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_URL = 'http://localhost:5000/api';
+        
+        // Toggle reporter info visibility
+        document.getElementById('isAnonymous').addEventListener('change', function() {
+            document.getElementById('reporterInfo').style.display = 
+                this.checked ? 'none' : 'block';
+        });
+        
+        // Create report
+        document.getElementById('reportForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const reportData = {
+                title: document.getElementById('title').value,
+                description: document.getElementById('description').value,
+                category: document.getElementById('category').value,
+                severity: document.getElementById('severity').value,
+                is_anonymous: document.getElementById('isAnonymous').checked,
+            };
+            
+            if (!reportData.is_anonymous) {
+                reportData.reporter_name = document.getElementById('reporterName').value;
+                reportData.reporter_email = document.getElementById('reporterEmail').value;
+                reportData.reporter_phone = document.getElementById('reporterPhone').value;
+            }
+            
+            try {
+                const response = await fetch(`${API_URL}/reports`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(reportData)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showMessage('✓ Signalement créé avec succès!', 'success');
+                    document.getElementById('reportForm').reset();
+                    loadReports();
+                    loadStats();
+                } else {
+                    showMessage('✗ Erreur: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showMessage('✗ Erreur réseau', 'error');
+                console.error(error);
+            }
+        });
+        
+        // Load reports
+        async function loadReports() {
+            try {
+                const response = await fetch(`${API_URL}/reports`);
+                const result = await response.json();
+                
+                const list = document.getElementById('reportsList');
+                list.innerHTML = '';
+                
+                if (result.reports.length === 0) {
+                    list.innerHTML = '<p style="color: #999;">Aucun signalement</p>';
+                    return;
+                }
+                
+                result.reports.slice(0, 5).forEach(report => {
+                    const statusClass = `status-${report.status.toLowerCase().replace(' ', '')}`;
+                    const div = document.createElement('div');
+                    div.className = 'report-item';
+                    div.innerHTML = `
+                        <div class="report-title">${report.title}</div>
+                        <div class="report-meta">
+                            ${report.category} • ${report.severity}
+                        </div>
+                        <div class="report-status ${statusClass}">${report.status}</div>
+                    `;
+                    list.appendChild(div);
+                });
+            } catch (error) {
+                console.error('Error loading reports:', error);
+            }
+        }
+        
+        // Load statistics
+        async function loadStats() {
+            try {
+                const response = await fetch(`${API_URL}/reports/stats/summary`);
+                const result = await response.json();
+                
+                document.getElementById('totalReports').textContent = result.total_reports;
+                document.getElementById('newReports').textContent = result.by_status['Nouveau'] || 0;
+                document.getElementById('inProgressReports').textContent = result.by_status['En cours'] || 0;
+                document.getElementById('resolvedReports').textContent = result.by_status['Traité'] || 0;
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+        
+        // Show message
+        function showMessage(text, type) {
+            const msg = document.getElementById('message');
+            msg.className = `message ${type}`;
+            msg.textContent = text;
+            setTimeout(() => msg.textContent = '', 5000);
+        }
+        
+        // Initial load
+        loadReports();
+        loadStats();
+        
+        // Refresh every 5 seconds
+        setInterval(() => {
+            loadReports();
+            loadStats();
+        }, 5000);
+    </script>
+</body>
+</html>

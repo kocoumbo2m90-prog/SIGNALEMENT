@@ -1,0 +1,15 @@
+Flask==2.3.3
+Flask-SQLAlchemy==3.0.5
+Flask-CORS==4.0.0
+SQLAlchemy==2.0.21
+python-dotenv==1.0.0
+Werkzeug==2.3.7
+soundfile==0.12.1
+librosa==0.10.0
+geopy==2.3.0
+Pillow==10.0.0
+python-magic==0.4.27
+Streamlit==1.28.1
+streamlit-option-menu==0.3.2
+pandas==2.1.1
+plotly==5.17.0
