@@ -110,7 +110,14 @@ def create_report():
                 file.save(filepath)
                 audio_uri = filepath
 
-        # 4. Écriture en Base de données
+        # 4. Nettoyage, sécurisation et conversion des coordonnées
+        lat_raw = data.get('latitude')
+        lng_raw = data.get('longitude')
+
+        latitude_val = float(str(lat_raw).replace(',', '.')) if lat_raw and str(lat_raw).strip() != "" else None
+        longitude_val = float(str(lng_raw).replace(',', '.')) if lng_raw and str(lng_raw).strip() != "" else None
+
+        # 5. Écriture propre en Base de données
         report = Report(
             title=data.get('title'),
             description=data.get('description'),
@@ -119,8 +126,8 @@ def create_report():
             is_anonymous=True,  # Forcé à True pour garantir l'anonymat de l'interface
             audio_uri=audio_uri,
             media_uri=media_uri,
-            latitude=data.get('latitude'),
-            longitude=data.get('longitude'),
+            latitude=latitude_val,   # Utilise la valeur convertie en float
+            longitude=longitude_val, # Utilise la valeur convertie en float
             location_address=data.get('location_address'),
             status="Nouveau"
         )
