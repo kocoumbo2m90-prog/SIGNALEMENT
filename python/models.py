@@ -20,7 +20,6 @@ class Report(db.Model):
     
     # Timestamps
     timestamp = db.Column('date_signalement', db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Géolocalisation (Changement en db.Numeric(9,6) pour correspondre exactement à pgAdmin)
     latitude = db.Column(db.Numeric(9, 6), nullable=True)
@@ -29,9 +28,7 @@ class Report(db.Model):
     
     # Pièces jointes
     media_uri = db.Column('medias_photos', db.String(255), nullable=True)  
-    media_type = db.Column(db.String(50), nullable=True)  
     audio_uri = db.Column('audio_lien', db.String(255), nullable=True)  
-    audio_duration_sec = db.Column(db.Integer, default=0)
     
     # Administration
     status = db.Column('statut', db.String(50), default='Nouveau')  
@@ -53,14 +50,11 @@ class Report(db.Model):
             'category': self.category,
             'severity': self.severity,
             'timestamp': self.timestamp.isoformat() if self.timestamp else None,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'latitude': float(self.latitude) if self.latitude else None,
             'longitude': float(self.longitude) if self.longitude else None,
             'location_address': self.location_address,
             'media_uri': self.media_uri,
-            'media_type': self.media_type,
             'audio_uri': self.audio_uri,
-            'audio_duration_sec': self.audio_duration_sec,
             'status': self.status,
             'admin_notes': self.admin_notes,
             'is_anonymous': self.is_anonymous,
