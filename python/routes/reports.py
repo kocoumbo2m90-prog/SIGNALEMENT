@@ -82,7 +82,7 @@ def get_report(report_id):
 def create_report():
     """Créer un nouveau rapport avec support des fichiers audio et média"""
     try:
-        # 1. Récupération des champs textes via FormData (request.form)
+        # 1. Récupération des données du formulaire
         data = request.form
         
         required_fields = ['title', 'description', 'category', 'severity']
@@ -92,7 +92,7 @@ def create_report():
         audio_uri = None
         media_uri = None
 
-        # 2. Gestion et interception de la Photo / Vidéo locale
+        # 2. Gestion de la Photo / Vidéo locale
         if 'media_file' in request.files:
             file = request.files['media_file']
             if file.filename != '':
@@ -101,7 +101,7 @@ def create_report():
                 file.save(filepath)
                 media_uri = filepath
 
-        # 3. Gestion et interception du Message Vocal local
+        # 3. Gestion du Message Vocal locale
         if 'audio_file' in request.files:
             file = request.files['audio_file']
             if file.filename != '':
@@ -110,24 +110,31 @@ def create_report():
                 file.save(filepath)
                 audio_uri = filepath
 
-        # 4. Nettoyage, sécurisation et conversion des coordonnées
+        # 4. Conversion et nettoyage sécurisé des coordonnées géographiques
         lat_raw = data.get('latitude')
         lng_raw = data.get('longitude')
 
         latitude_val = float(str(lat_raw).replace(',', '.')) if lat_raw and str(lat_raw).strip() != "" else None
         longitude_val = float(str(lng_raw).replace(',', '.')) if lng_raw and str(lng_raw).strip() != "" else None
 
-        # 5. Écriture propre en Base de données
+        # 5. Gestion de la chaîne Anonyme limitée à VARCHAR(3)
+        raw_anonymous = data.get('is_anonymous', True)
+        if raw_anonymous in [True, 'true', 'True', 'Oui', 'oui']:
+            anonyme_db = 'Oui'
+        else:
+            anonyme_db = 'Non'
+
+        # 6. Initialisation propre de l'objet unique Report (en utilisant vos variables du modèle)
         report = Report(
             title=data.get('title'),
             description=data.get('description'),
             category=data.get('category'),
             severity=data.get('severity'),
-            is_anonymous=True,  # Forcé à True pour garantir l'anonymat de l'interface
+            is_anonymous=anonyme_db,  # Strictement "Oui" ou "Non"
             audio_uri=audio_uri,
             media_uri=media_uri,
-            latitude=latitude_val,   # Utilise la valeur convertie en float
-            longitude=longitude_val, # Utilise la valeur convertie en float
+            latitude=latitude_val,
+            longitude=longitude_val,
             location_address=data.get('location_address'),
             status="Nouveau"
         )
@@ -141,7 +148,7 @@ def create_report():
         except Exception as e:
             logger.error(f"Erreur d'écriture Excel lors de la création : {str(e)}")
         
-        # Création du log d'audit
+        # Création du log d'audit relié au nouvel ID auto-généré
         create_audit_log(report.id, 'created', {'status': 'Nouveau'})
         
         return jsonify({
@@ -180,10 +187,13 @@ def update_report(report_id):
                 new_value = data[field]
                 if old_value != new_value:
                     changes[field] = {'old': old_value, 'new': new_value}
-                    setattr(report, field, new_value)
+                    # Gestion spécifique de l'anonymat en PUT si envoyé sous forme de booléen
+                    if field == 'is_anonymous':
+                        setattr(report, field, 'Oui' if new_value in [True, 'true', 'Oui'] else 'Non')
+                    else:
+                        setattr(report, field, new_value)
         
         if changes:
-            report.updated_at = datetime.utcnow()
             db.session.commit()
             
             # Enregistrement dans Excel
