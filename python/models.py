@@ -6,11 +6,10 @@ db = SQLAlchemy()
 
 class Report(db.Model):
     """Report model representing a whistleblower report"""
-    # Liaison avec le vrai nom de la table dans pgAdmin
     __tablename__ = 'registre_signalement'
     
-    # Primary key
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    # Clé primaire unique mappée sur votre nouvelle colonne physique
+    id = db.Column('id_signalement', db.Integer, primary_key=True, autoincrement=True)
     
     # Mapping avec les colonnes réelles en français
     title = db.Column('titre', db.String(255), nullable=False)
@@ -21,7 +20,7 @@ class Report(db.Model):
     # Timestamps
     timestamp = db.Column('date_signalement', db.DateTime, nullable=False, default=datetime.utcnow)
     
-    # Géolocalisation (Changement en db.Numeric(9,6) pour correspondre exactement à pgAdmin)
+    # Géolocalisation
     latitude = db.Column(db.Numeric(9, 6), nullable=True)
     longitude = db.Column(db.Numeric(9, 6), nullable=True)
     location_address = db.Column('adresse', db.Text, nullable=True)
@@ -33,7 +32,7 @@ class Report(db.Model):
     # Administration
     status = db.Column('statut', db.String(50), default='Nouveau')  
     admin_notes = db.Column('notes_admin', db.Text, default='')
-    is_anonymous = db.Column('anonyme', db.String(3), default='Oui') # 'anonyme' est un VARCHAR(3) dans votre base
+    is_anonymous = db.Column('anonyme', db.String(3), default='Oui')
     
     # Métadonnées du déclarant
     reporter_email = db.Column('email', db.String(100), nullable=True)  
@@ -42,7 +41,6 @@ class Report(db.Model):
     
     def to_dict(self):
         """Convert model to dictionary"""
-        # Conversion sécurisée des objets Decimal/Numeric pour le JSON
         return {
             'id': self.id,
             'title': self.title,
@@ -72,8 +70,8 @@ class AuditLog(db.Model):
     __tablename__ = 'audit_logs'
     
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    # Changement ici pour pointer vers la bonne table cible : registre_signalement.id
-    report_id = db.Column(db.Integer, db.ForeignKey('registre_signalement.id'), nullable=False)
+    # Pointage correct vers la nouvelle clé primaire de la table cible
+    report_id = db.Column(db.Integer, db.ForeignKey('registre_signalement.id_signalement'), nullable=False)
     action = db.Column(db.String(100), nullable=False)  
     timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     changes = db.Column(db.Text)  
