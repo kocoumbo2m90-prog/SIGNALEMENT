@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
 def create_audit_log(report_id, action, changes=None, performed_by='system'):
-    """Helper pour créer les entrées de log d'audit"""
+    """Helper pour créer les entrées de log d'audit (sans commit automatique)"""
     try:
         log = AuditLog(
             report_id=report_id,
@@ -23,9 +23,9 @@ def create_audit_log(report_id, action, changes=None, performed_by='system'):
             performed_by=performed_by
         )
         db.session.add(log)
-        db.session.commit()
+        # NE PAS commiter ici, on laissera la route principale le faire globalement.
     except Exception as e:
-        logger.error(f"Error creating audit log: {str(e)}")
+        logger.error(f"Error creating audit log entry: {str(e)}")
 
 # ==================== Routes des Rapports ====================
 
@@ -71,14 +71,7 @@ def get_report(report_id):
         
         return jsonify({
             'success': True,
-            'report': report.to_dict()
-        }), 200
-    except Exception as e:
-        logger.error(f"Error getting report: {str(e)}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@api_bp.route('/reports', methods=['POST'])
+           @api_bp.route('/reports', methods=['POST'])
 def create_report():
     """Créer un nouveau rapport avec support des fichiers audio et média"""
     try:
@@ -124,15 +117,50 @@ def create_report():
         else:
             anonyme_db = 'Non'
 
-        # 6. Initialisation propre de l'objet unique Report (en utilisant vos variables du modèle)
+        # 6. Initialisation propre de l'objet unique Report
         report = Report(
             title=data.get('title'),
             description=data.get('description'),
             category=data.get('category'),
             severity=data.get('severity'),
-            is_anonymous=anonyme_db,  # Strictement "Oui" ou "Non"
+            is_anonymous=anonyme_db,
             audio_uri=audio_uri,
             media_uri=media_uri,
+            latitude=latitude_val,
+            longitude=longitude_val,
+            location_address=data.get('location_address'),
+            status="Nouveau"
+        )
+        
+        # On ajoute le rapport à la session
+        db.session.add(report)
+        
+        # MAGIE : flush() envoie l'ordre à Neon mais ne ferme pas la transaction.
+        # Cela force PostgreSQL à attribuer l'ID auto-incrémenté (ex: 4) à 'report.id'
+        db.session.flush() 
+        
+        # Création du log d'audit relié au nouvel ID auto-généré en toute sécurité
+        create_audit_log(report.id, 'created', {'status': 'Nouveau'})
+        
+        # On valide définitivement l'ensemble de la transaction (Rapport + Audit Log)
+        db.session.commit()
+        
+        # Enregistrement synchrone dans Excel après la validation SQL
+        try:
+            ExcelHelper.update_or_add_report(report)
+        except Exception as e:
+            logger.error(f"Erreur d'écriture Excel lors de la création : {str(e)}")
+        
+        return jsonify({
+            'success': True, 
+            'message': 'Report created successfully', 
+            'report': report.to_dict()
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()  # En cas d'erreur, on annule tout proprement
+        logger.error(f"Error creating report: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
             latitude=latitude_val,
             longitude=longitude_val,
             location_address=data.get('location_address'),
