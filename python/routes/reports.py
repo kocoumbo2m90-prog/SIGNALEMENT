@@ -13,11 +13,11 @@ logger = logging.getLogger(__name__)
 # Définition du blueprint
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
-def create_audit_log(report_id, action, changes=None, performed_by='system'):
-    """Helper pour créer les entrées de log d'audit (sans commit automatique)"""
+def create_audit_log_safely(report_obj, action, changes=None, performed_by='system'):
+    """Helper associant directement l'objet Report au log d'audit pour éviter les violations de clé"""
     try:
         log = AuditLog(
-            report_id=report_id,
+            report=report_obj,  # Liaison par objet ORM (SQLAlchemy gère l'ordre d'insertion)
             action=action,
             changes=json.dumps(changes) if changes else None,
             performed_by=performed_by
@@ -27,6 +27,91 @@ def create_audit_log(report_id, action, changes=None, performed_by='system'):
         logger.error(f"Error creating audit log: {str(e)}")
 
 # ==================== Routes des Rapports ====================
+
+@api_bp.route('/reports', methods=['POST'])
+def create_report():
+    """Créer un nouveau rapport avec liaison ORM sécurisée et isolation Excel"""
+    try:
+        # 1. Récupération des données du formulaire
+        data = request.form
+        
+        required_fields = ['title', 'description', 'category', 'severity']
+        if not all(field in data for field in required_fields):
+            return jsonify({'success': False, 'error': 'Missing required fields'}), 400
+        
+        audio_uri = None
+        media_uri = None
+
+        # 2. Gestion de la Photo / Vidéo locale
+        if 'media_file' in request.files:
+            file = request.files['media_file']
+            if file.filename != '':
+                filename = secure_filename(f"media_{datetime.utcnow().timestamp()}_{file.filename}")
+                filepath = os.path.join(current_app.config['MEDIA_FOLDER'], filename)
+                file.save(filepath)
+                media_uri = filepath
+
+        # 3. Gestion du Message Vocal locale
+        if 'audio_file' in request.files:
+            file = request.files['audio_file']
+            if file.filename != '':
+                filename = secure_filename(f"audio_{datetime.utcnow().timestamp()}.wav")
+                filepath = os.path.join(current_app.config['AUDIO_FOLDER'], filename)
+                file.save(filepath)
+                audio_uri = filepath
+
+        # 4. Conversion et nettoyage des coordonnées géographiques
+        lat_raw = data.get('latitude')
+        lng_raw = data.get('longitude')
+
+        latitude_val = float(str(lat_raw).replace(',', '.')) if lat_raw and str(lat_raw).strip() != "" else None
+        longitude_val = float(str(lng_raw).replace(',', '.')) if lng_raw and str(lng_raw).strip() != "" else None
+
+        # 5. Gestion de l'Anonymat
+        raw_anonymous = data.get('is_anonymous', True)
+        anonyme_db = 'Oui' if raw_anonymous in [True, 'true', 'True', 'Oui', 'oui'] else 'Non'
+
+        # 6. Initialisation de l'objet Report
+        report = Report(
+            title=data.get('title'),
+            description=data.get('description'),
+            category=data.get('category'),
+            severity=data.get('severity'),
+            is_anonymous=anonyme_db,
+            audio_uri=audio_uri,
+            media_uri=media_uri,
+            latitude=latitude_val,
+            longitude=longitude_val,
+            location_address=data.get('location_address'),
+            status="Nouveau"
+        )
+        
+        # On ajoute le rapport à la session
+        db.session.add(report)
+        
+        # 7. Création de l'audit lié par l'objet relationnel
+        create_audit_log_safely(report, 'created', {'status': 'Nouveau'})
+        
+        # 8. Un seul commit pour valider de manière atomique le Report et l'Audit
+        db.session.commit()
+        
+        # 9. Enregistrement Excel isolé (ne bloque pas la route s'il échoue)
+        try:
+            ExcelHelper.update_or_add_report(report)
+        except Exception as e:
+            logger.error(f"Erreur d'écriture Excel isolée : {str(e)}")
+        
+        return jsonify({
+            'success': True, 
+            'message': 'Report created successfully', 
+            'report': report.to_dict()
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()  # Nettoyage en cas d'échec total
+        logger.error(f"Error creating report: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @api_bp.route('/reports', methods=['GET'])
 def get_reports():
@@ -44,7 +129,6 @@ def get_reports():
         if category:
             query = query.filter_by(category=category)
         
-        # Tri par le plus récent
         query = query.order_by(Report.timestamp.desc())
         paginated = query.paginate(page=page, per_page=per_page, error_out=False)
         
@@ -77,93 +161,6 @@ def get_report(report_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@api_bp.route('/reports', methods=['POST'])
-def create_report():
-    """Créer un nouveau rapport avec support des fichiers audio et média"""
-    try:
-        # 1. Récupération des données du formulaire
-        data = request.form
-        
-        required_fields = ['title', 'description', 'category', 'severity']
-        if not all(field in data for field in required_fields):
-            return jsonify({'success': False, 'error': 'Missing required fields'}), 400
-        
-        audio_uri = None
-        media_uri = None
-
-        # 2. Gestion de la Photo / Vidéo locale
-        if 'media_file' in request.files:
-            file = request.files['media_file']
-            if file.filename != '':
-                filename = secure_filename(f"media_{datetime.utcnow().timestamp()}_{file.filename}")
-                filepath = os.path.join(current_app.config['MEDIA_FOLDER'], filename)
-                file.save(filepath)
-                media_uri = filepath
-
-        # 3. Gestion du Message Vocal locale
-        if 'audio_file' in request.files:
-            file = request.files['audio_file']
-            if file.filename != '':
-                filename = secure_filename(f"audio_{datetime.utcnow().timestamp()}.wav")
-                filepath = os.path.join(current_app.config['AUDIO_FOLDER'], filename)
-                file.save(filepath)
-                audio_uri = filepath
-
-        # 4. Conversion et nettoyage sécurisé des coordonnées géographiques
-        lat_raw = data.get('latitude')
-        lng_raw = data.get('longitude')
-
-        latitude_val = float(str(lat_raw).replace(',', '.')) if lat_raw and str(lat_raw).strip() != "" else None
-        longitude_val = float(str(lng_raw).replace(',', '.')) if lng_raw and str(lng_raw).strip() != "" else None
-
-        # 5. Gestion de la chaîne Anonyme limitée à VARCHAR(3)
-        raw_anonymous = data.get('is_anonymous', True)
-        if raw_anonymous in [True, 'true', 'True', 'Oui', 'oui']:
-            anonyme_db = 'Oui'
-        else:
-            anonyme_db = 'Non'
-
-        # 6. Initialisation propre de l'objet unique Report
-        report = Report(
-            title=data.get('title'),
-            description=data.get('description'),
-            category=data.get('category'),
-            severity=data.get('severity'),
-            is_anonymous=anonyme_db,
-            audio_uri=audio_uri,
-            media_uri=media_uri,
-            latitude=latitude_val,
-            longitude=longitude_val,
-            location_address=data.get('location_address'),
-            status="Nouveau"
-        )
-        
-        db.session.add(report)
-        db.session.flush() # Génère l'ID sans fermer la transaction globale
-        
-        # Création du log d'audit relié au nouvel ID auto-généré
-        create_audit_log(report.id, 'created', {'status': 'Nouveau'})
-        
-        db.session.commit()
-        
-        # Enregistrement synchrone dans Excel
-        try:
-            ExcelHelper.update_or_add_report(report)
-        except Exception as e:
-            logger.error(f"Erreur d'écriture Excel lors de la création : {str(e)}")
-        
-        return jsonify({
-            'success': True, 
-            'message': 'Report created successfully', 
-            'report': report.to_dict()
-        }), 201
-
-    except Exception as e:
-        logger.error(f"Error creating report: {str(e)}")
-        db.session.rollback()
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
 @api_bp.route('/reports/<int:report_id>', methods=['PUT'])
 def update_report(report_id):
     """Mettre à jour un rapport"""
@@ -181,7 +178,6 @@ def update_report(report_id):
             'reporter_email', 'reporter_phone', 'status', 'admin_notes'
         ]
         
-        # Détection des changements
         for field in updatable_fields:
             if field in data:
                 old_value = getattr(report, field)
@@ -194,16 +190,13 @@ def update_report(report_id):
                         setattr(report, field, new_value)
         
         if changes:
+            create_audit_log_safely(report, 'updated', changes)
             db.session.commit()
             
-            # Enregistrement dans Excel
             try:
                 ExcelHelper.update_or_add_report(report)
             except Exception as e:
                 logger.error(f"Erreur d'écriture Excel lors de la modification : {str(e)}")
-                
-            create_audit_log(report.id, 'updated', changes)
-            db.session.commit()
         
         return jsonify({
             'success': True,
@@ -225,13 +218,11 @@ def delete_report(report_id):
         if not report:
             return jsonify({'success': False, 'error': 'Report not found'}), 404
         
-        # Suppression des fichiers physiques liés (si existants)
         if report.audio_uri and os.path.exists(report.audio_uri):
             os.remove(report.audio_uri)
         if report.media_uri and os.path.exists(report.media_uri):
             os.remove(report.media_uri)
         
-        # Nettoyage de l'historique d'audit pour éviter les contraintes de clés étrangères
         AuditLog.query.filter_by(report_id=report_id).delete()
         
         db.session.delete(report)
@@ -251,14 +242,11 @@ def delete_report(report_id):
 
 @api_bp.route('/reports/stats/summary', methods=['GET'])
 def get_stats_summary():
-    """Obtenir les statistiques globales (Optimisé en SQL)"""
     try:
         total_reports = Report.query.count()
-        
         by_status = {}
         by_category = {}
         
-        # On ne charge que les colonnes nécessaires pour économiser la RAM
         reports_data = db.session.query(Report.status, Report.category).all()
         for status, category in reports_data:
             by_status[status] = by_status.get(status, 0) + 1
