@@ -18,8 +18,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def create_app(config_name='development'):
+def create_app(config_name=None):
     """Crée et configure l'application Flask"""
+    if config_name is None:
+        config_name = os.environ.get('FLASK_CONFIG', 'development')
+
     basedir = os.path.abspath(os.path.dirname(__file__))
     
     app = Flask(__name__, 
@@ -132,6 +135,18 @@ def create_app(config_name='development'):
                         </select>
                     </div>
                     <textarea id="description" rows="3" placeholder="Description des faits précis..." class="w-full p-4 rounded-xl input-dark text-sm" required></textarea>
+                    
+                    <div class="pt-1">
+                        <button type="button" id="locationBtn" class="w-full bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 border border-blue-500/30 font-semibold py-2.5 px-4 rounded-xl transition text-sm flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-location-dot"></i> <span id="btnText">Activer ma position</span>
+                        </button>
+                        <p id="locationStatus" class="text-center text-xs text-gray-500 mt-1.5"></p>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3" id="geoFields" style="display: none;">
+                        <input type="text" id="latitude" readonly class="w-full p-2.5 rounded-xl input-dark text-xs text-gray-400" placeholder="Latitude">
+                        <input type="text" id="longitude" readonly class="w-full p-2.5 rounded-xl input-dark text-xs text-gray-400" placeholder="Longitude">
+                    </div>
                 </div>
             </div>
             <div>
@@ -168,6 +183,43 @@ def create_app(config_name='development'):
                 mediaIcon.className = "fa-solid fa-circle-check text-2xl text-green-400 mb-2";
             }
         });
+
+        // Script de Géolocalisation
+        document.getElementById('locationBtn').addEventListener('click', function() {
+            const status = document.getElementById('locationStatus');
+            const btnText = document.getElementById('btnText');
+            const btn = this;
+
+            if (!navigator.geolocation) {
+                status.innerText = "✗ Non supporté par votre navigateur.";
+                return;
+            }
+
+            btn.disabled = true;
+            status.innerText = "⏳ Recherche de votre position...";
+
+            navigator.geolocation.getCurrentPosition(
+                function(position) {
+                    const lat = position.coords.latitude.toFixed(6);
+                    const lng = position.coords.longitude.toFixed(6);
+                    
+                    document.getElementById('latitude').value = lat;
+                    document.getElementById('longitude').value = lng;
+                    document.getElementById('geoFields').style.style.display = 'grid';
+                    
+                    status.innerText = "✓ Position enregistrée.";
+                    status.className = "text-center text-xs text-green-400 font-medium mt-1.5";
+                    btnText.innerText = "Position synchronisée";
+                    btn.disabled = false;
+                },
+                function() {
+                    status.innerText = "✗ Impossible d'accéder à la position.";
+                    status.className = "text-center text-xs text-red-400 font-medium mt-1.5";
+                    btn.disabled = false;
+                }
+            );
+        });
+
         let mediaRecorder;
         let audioChunks = [];
         let isRecording = false;
@@ -199,6 +251,7 @@ def create_app(config_name='development'):
                 micIcon.className = "fa-solid fa-microphone text-xl";
             }
         });
+
         document.getElementById('reportForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const formData = new FormData();
@@ -206,16 +259,28 @@ def create_app(config_name='development'):
             formData.append('description', document.getElementById('description').value);
             formData.append('category', document.getElementById('category').value);
             formData.append('severity', document.getElementById('severity').value);
+            
+            // Forcer la valeur 'Oui' pour l'anonymat par défaut (évite le bug VARCHAR(3) Neon)
+            formData.append('anonyme', 'Oui');
+
+            const lat = document.getElementById('latitude').value;
+            const lng = document.getElementById('longitude').value;
+            if(lat && lng) {
+                formData.append('latitude', lat);
+                formData.append('longitude', lng);
+            }
+
             if(mediaInput.files[0]) { formData.append('media_file', mediaInput.files[0]); }
             if(audioBlob) { formData.append('audio_file', audioBlob, 'audio.wav'); }
+            
             try {
                 const response = await fetch('/api/reports', { method: 'POST', body: formData });
                 const result = await response.json();
                 if(result.success) {
-                    alert("Signalement enregistré avec succès dans l'Excel et la Base !");
+                    alert("Signalement enregistré avec succès dans Neon.tech !");
                     location.reload();
                 } else { alert("Erreur : " + result.error); }
-            } catch (err) { alert("Erreur de connexion avec le serveur Python."); }
+            } catch (err) { alert("Erreur de connexion avec le serveur."); }
         });
     </script>
 </body>
@@ -255,8 +320,10 @@ def create_app(config_name='development'):
     return app
 
 
-# ==================== Point d'entrée Local ====================
+# ==================== Point d'entrée de l'application ====================
+# On instancie l'application globalement pour que Gunicorn puisse la trouver
+app = create_app(os.environ.get('FLASK_CONFIG', 'development'))
+
 if __name__ == '__main__':
-    env = os.environ.get('FLASK_ENV', 'development')
-    app = create_app(env)
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
