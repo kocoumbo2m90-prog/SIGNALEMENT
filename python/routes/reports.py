@@ -23,9 +23,8 @@ def create_audit_log(report_id, action, changes=None, performed_by='system'):
             performed_by=performed_by
         )
         db.session.add(log)
-        # NE PAS commiter ici, on laissera la route principale le faire globalement.
     except Exception as e:
-        logger.error(f"Error creating audit log entry: {str(e)}")
+        logger.error(f"Error creating audit log: {str(e)}")
 
 # ==================== Routes des Rapports ====================
 
@@ -71,7 +70,14 @@ def get_report(report_id):
         
         return jsonify({
             'success': True,
-           @api_bp.route('/reports', methods=['POST'])
+            'report': report.to_dict()
+        }), 200
+    except Exception as e:
+        logger.error(f"Error getting report: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@api_bp.route('/reports', methods=['POST'])
 def create_report():
     """Créer un nouveau rapport avec support des fichiers audio et média"""
     try:
@@ -132,42 +138,12 @@ def create_report():
             status="Nouveau"
         )
         
-        # On ajoute le rapport à la session
         db.session.add(report)
+        db.session.flush() # Génère l'ID sans fermer la transaction globale
         
-        # MAGIE : flush() envoie l'ordre à Neon mais ne ferme pas la transaction.
-        # Cela force PostgreSQL à attribuer l'ID auto-incrémenté (ex: 4) à 'report.id'
-        db.session.flush() 
-        
-        # Création du log d'audit relié au nouvel ID auto-généré en toute sécurité
+        # Création du log d'audit relié au nouvel ID auto-généré
         create_audit_log(report.id, 'created', {'status': 'Nouveau'})
         
-        # On valide définitivement l'ensemble de la transaction (Rapport + Audit Log)
-        db.session.commit()
-        
-        # Enregistrement synchrone dans Excel après la validation SQL
-        try:
-            ExcelHelper.update_or_add_report(report)
-        except Exception as e:
-            logger.error(f"Erreur d'écriture Excel lors de la création : {str(e)}")
-        
-        return jsonify({
-            'success': True, 
-            'message': 'Report created successfully', 
-            'report': report.to_dict()
-        }), 201
-
-    except Exception as e:
-        db.session.rollback()  # En cas d'erreur, on annule tout proprement
-        logger.error(f"Error creating report: {str(e)}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-            latitude=latitude_val,
-            longitude=longitude_val,
-            location_address=data.get('location_address'),
-            status="Nouveau"
-        )
-        
-        db.session.add(report)
         db.session.commit()
         
         # Enregistrement synchrone dans Excel
@@ -175,9 +151,6 @@ def create_report():
             ExcelHelper.update_or_add_report(report)
         except Exception as e:
             logger.error(f"Erreur d'écriture Excel lors de la création : {str(e)}")
-        
-        # Création du log d'audit relié au nouvel ID auto-généré
-        create_audit_log(report.id, 'created', {'status': 'Nouveau'})
         
         return jsonify({
             'success': True, 
@@ -215,7 +188,6 @@ def update_report(report_id):
                 new_value = data[field]
                 if old_value != new_value:
                     changes[field] = {'old': old_value, 'new': new_value}
-                    # Gestion spécifique de l'anonymat en PUT si envoyé sous forme de booléen
                     if field == 'is_anonymous':
                         setattr(report, field, 'Oui' if new_value in [True, 'true', 'Oui'] else 'Non')
                     else:
@@ -231,6 +203,7 @@ def update_report(report_id):
                 logger.error(f"Erreur d'écriture Excel lors de la modification : {str(e)}")
                 
             create_audit_log(report.id, 'updated', changes)
+            db.session.commit()
         
         return jsonify({
             'success': True,
