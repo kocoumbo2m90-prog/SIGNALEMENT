@@ -5,6 +5,10 @@ from datetime import datetime
 from flask import Blueprint, request, jsonify, current_app
 from werkzeug.utils import secure_filename
 
+# Importation du SDK Cloudinary
+import cloudinary
+import cloudinary.uploader
+
 from models import db, Report, AuditLog
 from utils.excel_helper import ExcelHelper
 
@@ -12,6 +16,9 @@ logger = logging.getLogger(__name__)
 
 # Définition du blueprint
 api_bp = Blueprint('api', __name__, url_prefix='/api')
+
+# Configuration automatique du SDK Cloudinary via la variable d'environnement CLOUDINARY_URL
+cloudinary.config(secure=True)
 
 def create_audit_log_safely(report_obj, action, changes=None, performed_by='system'):
     """Helper associant directement l'objet Report au log d'audit pour éviter les violations de clé"""
@@ -30,7 +37,7 @@ def create_audit_log_safely(report_obj, action, changes=None, performed_by='syst
 
 @api_bp.route('/reports', methods=['POST'])
 def create_report():
-    """Créer un nouveau rapport avec liaison ORM sécurisée et isolation Excel"""
+    """Créer un nouveau rapport avec téléversement Cloudinary et liaison ORM sécurisée"""
     try:
         # 1. Récupération des données du formulaire
         data = request.form
@@ -42,23 +49,39 @@ def create_report():
         audio_uri = None
         media_uri = None
 
-        # 2. Gestion de la Photo / Vidéo locale
+        # 2. Gestion de la Photo / Vidéo avec Cloudinary
         if 'media_file' in request.files:
             file = request.files['media_file']
             if file.filename != '':
-                filename = secure_filename(f"media_{datetime.utcnow().timestamp()}_{file.filename}")
-                filepath = os.path.join(current_app.config['MEDIA_FOLDER'], filename)
-                file.save(filepath)
-                media_uri = filepath
+                try:
+                    # Envoi direct du flux binaire vers Cloudinary
+                    upload_result = cloudinary.uploader.upload(
+                        file,
+                        resource_type="auto",  # Détecte automatiquement les images et vidéos
+                        folder="alerte_citoyenne/medias"
+                    )
+                    # Récupération de l'URL sécurisée HTTPS de Cloudinary
+                    media_uri = upload_result.get('secure_url')
+                except Exception as upload_err:
+                    logger.error(f"Erreur d'upload média Cloudinary: {str(upload_err)}")
+                    return jsonify({'success': False, 'error': f"Media upload failed: {str(upload_err)}"}), 500
 
-        # 3. Gestion du Message Vocal locale
+        # 3. Gestion du Message Vocal avec Cloudinary
         if 'audio_file' in request.files:
             file = request.files['audio_file']
             if file.filename != '':
-                filename = secure_filename(f"audio_{datetime.utcnow().timestamp()}.wav")
-                filepath = os.path.join(current_app.config['AUDIO_FOLDER'], filename)
-                file.save(filepath)
-                audio_uri = filepath
+                try:
+                    # Cloudinary traite les fichiers audio sous la catégorie "video"
+                    upload_audio_result = cloudinary.uploader.upload(
+                        file,
+                        resource_type="video",
+                        folder="alerte_citoyenne/audios"
+                    )
+                    # Récupération de l'URL sécurisée HTTPS de Cloudinary
+                    audio_uri = upload_audio_result.get('secure_url')
+                except Exception as upload_err:
+                    logger.error(f"Erreur d'upload audio Cloudinary: {str(upload_err)}")
+                    return jsonify({'success': False, 'error': f"Audio upload failed: {str(upload_err)}"}), 500
 
         # 4. Conversion et nettoyage des coordonnées géographiques
         lat_raw = data.get('latitude')
@@ -78,8 +101,8 @@ def create_report():
             category=data.get('category'),
             severity=data.get('severity'),
             is_anonymous=anonyme_db,
-            audio_uri=audio_uri,
-            media_uri=media_uri,
+            audio_uri=audio_uri,  # Contient désormais l'URL Cloudinary (https://res.cloudinary.com/...)
+            media_uri=media_uri,  # Contient désormais l'URL Cloudinary (https://res.cloudinary.com/...)
             latitude=latitude_val,
             longitude=longitude_val,
             location_address=data.get('location_address'),
@@ -218,6 +241,9 @@ def delete_report(report_id):
         if not report:
             return jsonify({'success': False, 'error': 'Report not found'}), 404
         
+        # Suppression des assets Cloudinary s'ils existent avant de supprimer l'enregistrement
+        # Note : On extrait l'ID public de Cloudinary si vous souhaitez une suppression complète sur le cloud.
+        # Pour l'instant, nous supprimons uniquement les références locales historiques s'il en restait.
         if report.audio_uri and os.path.exists(report.audio_uri):
             os.remove(report.audio_uri)
         if report.media_uri and os.path.exists(report.media_uri):
