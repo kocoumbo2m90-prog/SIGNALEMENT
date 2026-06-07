@@ -16,3 +16,4 @@ plotly==5.17.0
 gunicorn
 openpyxl
 psycopg2-binary>=2.9.0
+cloudinary

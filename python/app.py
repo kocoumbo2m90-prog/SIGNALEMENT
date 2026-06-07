@@ -9,6 +9,11 @@ from config import config
 from routes.reports import api_bp
 from routes.media import media_bp
 from utils.excel_helper import ExcelHelper
+import cloudinary
+import cloudinary.uploader
+
+# Cloudinary détecte et utilise automatiquement la variable d'environnement CLOUDINARY_URL
+cloudinary.config(secure=True)
 
 # Configuration du logging globale
 logging.basicConfig(
@@ -32,11 +37,6 @@ def create_app(config_name=None):
     # Chargement de la configuration
     app.config.from_object(config[config_name])
     
-    # Création des dossiers de téléchargement
-    Path(app.config['UPLOAD_FOLDER']).mkdir(parents=True, exist_ok=True)
-    Path(app.config['AUDIO_FOLDER']).mkdir(parents=True, exist_ok=True)
-    Path(app.config['MEDIA_FOLDER']).mkdir(parents=True, exist_ok=True)
-    
     # Initialisation des extensions
     db.init_app(app)
     CORS(app, origins=app.config['CORS_ORIGINS'])
@@ -45,11 +45,6 @@ def create_app(config_name=None):
     app.register_blueprint(api_bp)
     app.register_blueprint(media_bp)
 
-    # Route pour permettre à l'interface d'accéder aux fichiers médias stockés localement
-    @app.route('/uploads/<path:filename>')
-    def uploaded_files(filename):
-        return send_from_directory(app.config['MEDIA_FOLDER'], filename)
-        
     # ==================== Gestion des Erreurs ====================
     @app.errorhandler(Exception)
     def handle_unexpected_error(error):
@@ -111,7 +106,7 @@ def create_app(config_name=None):
             <div>
                 <h4 class="text-sm font-semibold text-blue-300 mb-1">Donner l'alerte de manière sécurisée</h4>
                 <p class="text-xs text-blue-200/80 leading-relaxed">
-                    Cette application garantit l'anonymat total. Vos fichiers sont chiffrés et l'historique est purgé.
+                    Cette application garantit l'anonymat total. Vos fichiers sont hébergés de manière sécurisée et permanente.
                 </p>
             </div>
         </div>
@@ -205,7 +200,8 @@ def create_app(config_name=None):
                     
                     document.getElementById('latitude').value = lat;
                     document.getElementById('longitude').value = lng;
-                    document.getElementById('geoFields').style.style.display = 'grid';
+                    // Correction du double "style.style" qui causait un bug JavaScript
+                    document.getElementById('geoFields').style.display = 'grid';
                     
                     status.innerText = "✓ Position enregistrée.";
                     status.className = "text-center text-xs text-green-400 font-medium mt-1.5";
@@ -259,8 +255,6 @@ def create_app(config_name=None):
             formData.append('description', document.getElementById('description').value);
             formData.append('category', document.getElementById('category').value);
             formData.append('severity', document.getElementById('severity').value);
-            
-            // Forcer la valeur 'Oui' pour l'anonymat par défaut (évite le bug VARCHAR(3) Neon)
             formData.append('anonyme', 'Oui');
 
             const lat = document.getElementById('latitude').value;
@@ -303,7 +297,7 @@ def create_app(config_name=None):
             }
         }), 200
 
-    # ==================== Initialisation au Démarrage (Pour Render/Gunicorn) ====================
+    # ==================== Initialisation au Démarrage ====================
     with app.app_context():
         try:
             db.create_all()
@@ -320,8 +314,6 @@ def create_app(config_name=None):
     return app
 
 
-# ==================== Point d'entrée de l'application ====================
-# On instancie l'application globalement pour que Gunicorn puisse la trouver
 app = create_app(os.environ.get('FLASK_CONFIG', 'development'))
 
 if __name__ == '__main__':
